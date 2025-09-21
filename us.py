@@ -280,63 +280,145 @@ def cluster_positions(pred_positions, radius=0.1):
         clusters.append(cluster_center)
     return clusters
     
+# if __name__ == "__main__":
+#     mpu6050_init()
+
+#     # 🔹 모델 준비 (입력 차원을 11에서 10으로 수정)
+#     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+#     model = StarToGPS(input_dim=10).to(device)
+#     model.load_state_dict(torch.load("2.pth", map_location=device))
+#     model.eval()
+
+#     # 🔹 센서 데이터 및 시간 정보 획득
+#     pitch_val, roll_val = get_pitch_roll()
+#     current_time = time.time()
+#     frac_day = (current_time % 86400) / 86400
+#     sin_t = np.sin(2 * np.pi * frac_day)
+#     cos_t = np.cos(2 * np.pi * frac_day)
+
+#     # 🔹 카메라로 사진 한 장 촬영 (libcamera-jpeg 이용)
+#     img_path = "capture.jpg"
+#     cmd = f"libcamera-jpeg -o {img_path} --width 640 --height 480 --camera 0"
+#     subprocess.run(shlex.split(cmd))
+
+#     # 🔹 촬영된 이미지 불러오기
+#     frame = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
+#     if frame is None:
+#         print("❌ 사진 촬영 실패")
+#         exit()
+
+#     # 🔹 별 검출
+#     observed_stars = run_with_timeout(magnitude, args=(img_path,), timeout=5)
+#     if not observed_stars:
+#         print("❌ 별 검출 실패")
+#         exit()
+
+#     # 🔹 별 매칭
+#     matched_stars = match_stars(observed_stars, nautical_stars)
+#     h, w = frame.shape
+#     pred_positions = []
+
+#     for star in matched_stars:
+#         x_norm = star["coords"][0] / w
+#         y_norm = star["coords"][1] / h
+#         ra, dec = star["ra"], star["dec"]
+
+#         # 센서 데이터 및 시간 정보를 features 배열에 추가
+#         # Azimuth를 제외하고 pitch, roll, sin_t, cos_t를 포함
+#         features = np.array(
+#             [x_norm, y_norm, w, h, ra, dec, pitch_val, roll_val, sin_t, cos_t],
+#             dtype=np.float32
+#         )
+        
+#         x_tensor = torch.tensor(features).unsqueeze(0).to(device)
+#         with torch.no_grad():
+#             pred = model(x_tensor).cpu().numpy()[0]
+#         pred_positions.append(pred)
+
+#     if pred_positions:
+#         cluster_centers = cluster_positions(pred_positions)
+#         print("🌍 예측된 GPS 후보:", cluster_centers)
+#     else:
+#         print("❌ 추론된 별 없음")
+
+
 if __name__ == "__main__":
     mpu6050_init()
 
-    # 🔹 모델 준비 (입력 차원을 11에서 10으로 수정)
+    # 🔹 모델 준비
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = StarToGPS(input_dim=10).to(device)
     model.load_state_dict(torch.load("2.pth", map_location=device))
     model.eval()
 
-    # 🔹 센서 데이터 및 시간 정보 획득
-    pitch_val, roll_val = get_pitch_roll()
-    current_time = time.time()
-    frac_day = (current_time % 86400) / 86400
-    sin_t = np.sin(2 * np.pi * frac_day)
-    cos_t = np.cos(2 * np.pi * frac_day)
+    try:
+        while True:
+            # 🔹 센서 데이터 및 시간 정보 획득
+            pitch_val, roll_val = get_pitch_roll()
+            current_time = time.time()
+            frac_day = (current_time % 86400) / 86400
+            sin_t = np.sin(2 * np.pi * frac_day)
+            cos_t = np.cos(2 * np.pi * frac_day)
 
-    # 🔹 카메라로 사진 한 장 촬영 (libcamera-jpeg 이용)
-    img_path = "capture.jpg"
-    cmd = f"libcamera-jpeg -o {img_path} --width 640 --height 480 --camera 0"
-    subprocess.run(shlex.split(cmd))
+            # 🔹 카메라로 사진 한 장 촬영 (libcamera-jpeg 이용)
+            img_path = "capture.jpg"
+            cmd = f"libcamera-jpeg -o {img_path} --width 640 --height 480 --camera 0"
+            subprocess.run(shlex.split(cmd))
 
-    # 🔹 촬영된 이미지 불러오기
-    frame = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
-    if frame is None:
-        print("❌ 사진 촬영 실패")
-        exit()
+            # 🔹 촬영된 이미지 불러오기
+            frame = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
+            if frame is None:
+                print("❌ 사진 촬영 실패")
+                time.sleep(5)
+                continue
 
-    # 🔹 별 검출
-    observed_stars = run_with_timeout(magnitude, args=(img_path,), timeout=5)
-    if not observed_stars:
-        print("❌ 별 검출 실패")
-        exit()
+            # 🔹 별 검출
+            observed_stars = run_with_timeout(magnitude, args=(img_path,), timeout=5)
+            if not observed_stars:
+                print("❌ 별 검출 실패")
+                time.sleep(5)
+                continue
 
-    # 🔹 별 매칭
-    matched_stars = match_stars(observed_stars, nautical_stars)
-    h, w = frame.shape
-    pred_positions = []
+            # 🔹 별 매칭
+            matched_stars = match_stars(observed_stars, nautical_stars)
+            h, w = frame.shape
+            pred_positions = []
 
-    for star in matched_stars:
-        x_norm = star["coords"][0] / w
-        y_norm = star["coords"][1] / h
-        ra, dec = star["ra"], star["dec"]
+            for star in matched_stars:
+                x_norm = star["coords"][0] / w
+                y_norm = star["coords"][1] / h
+                ra, dec = star["ra"], star["dec"]
 
-        # 센서 데이터 및 시간 정보를 features 배열에 추가
-        # Azimuth를 제외하고 pitch, roll, sin_t, cos_t를 포함
-        features = np.array(
-            [x_norm, y_norm, w, h, ra, dec, pitch_val, roll_val, sin_t, cos_t],
-            dtype=np.float32
-        )
-        
-        x_tensor = torch.tensor(features).unsqueeze(0).to(device)
-        with torch.no_grad():
-            pred = model(x_tensor).cpu().numpy()[0]
-        pred_positions.append(pred)
+                # 센서 데이터 및 시간 정보를 features 배열에 추가
+                # Azimuth를 제외하고 pitch, roll, sin_t, cos_t를 포함
+                features = np.array(
+                    [x_norm, y_norm, w, h, ra, dec, pitch_val, roll_val, sin_t, cos_t],
+                    dtype=np.float32
+                )
+                
+                x_tensor = torch.tensor(features).unsqueeze(0).to(device)
+                with torch.no_grad():
+                    pred = model(x_tensor).cpu().numpy()[0]
+                pred_positions.append(pred)
 
-    if pred_positions:
-        cluster_centers = cluster_positions(pred_positions)
-        print("🌍 예측된 GPS 후보:", cluster_centers)
-    else:
-        print("❌ 추론된 별 없음")
+            if pred_positions:
+                cluster_centers = cluster_positions(pred_positions)
+                print("🌍 예측된 GPS 후보:", cluster_centers)
+                
+                # 🌟🌟🌟 메모장 파일에 기록
+                with open("location_records.txt", "a") as f:
+                    timestamp = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime())
+                    f.write(f"--- 추정 시간: {timestamp} ---\n")
+                    for center in cluster_centers:
+                        lat, lon = center
+                        f.write(f"위도: {lat:.4f}, 경도: {lon:.4f}\n")
+                    f.write("\n")
+                
+            else:
+                print("❌ 추론된 별 없음")
+                
+            print("-" * 30)
+            time.sleep(5) # 5초 대기 후 다음 반복 실행
+
+    except KeyboardInterrupt:
+        print("\n프로그램 종료")
